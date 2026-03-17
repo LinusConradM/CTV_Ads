@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records
 
 from analytics.segmentation import (
@@ -27,8 +27,17 @@ def get_segmentation(
     device_types: list[str] | None = Query(None),
 ):
     """Audience segmentation with K-Means clustering."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("segmentation", k=k, start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_segmentation(df, k)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_segmentation(df, k):
     if len(df) == 0:
         return {"kpis": {}, "elbow_curve": [], "pca_projection": [], "value_analysis": []}
 

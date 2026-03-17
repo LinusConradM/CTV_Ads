@@ -10,5 +10,6 @@ export function useAnomalies(contamination: number = 0.05, metric: string = 'cle
     queryKey: ['anomalies', filters, contamination, metric],
     queryFn: () => fetchAnomalies(filters, contamination, metric),
     enabled: !!filters.start_date,
+    staleTime: 5 * 60 * 1000,
   });
 }

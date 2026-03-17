@@ -1,12 +1,15 @@
 """
 API — Shared Dependencies
 
-Data loading, DuckDB connection management, and filter application.
+Data loading, DuckDB connection management, filter application, and response caching.
 """
 
+import hashlib
+import json
 import logging
 from datetime import date
 from pathlib import Path
+from typing import Any, Callable
 
 import duckdb
 import pandas as pd
@@ -20,6 +23,34 @@ CSV_PATH = PROJECT_ROOT / "data" / "raw" / "impressions.csv"
 
 # Module-level cache for the full DataFrame
 _df_cache: pd.DataFrame | None = None
+
+# Module-level cache for computed API responses (data is static per session)
+_result_cache: dict[str, Any] = {}
+
+
+def cache_key(route: str, **params) -> str:
+    """Create a hashable cache key from route name and parameters."""
+    key_data = {"route": route}
+    for k, v in sorted(params.items()):
+        if v is None:
+            key_data[k] = None
+        elif isinstance(v, list):
+            key_data[k] = tuple(v)
+        elif isinstance(v, date):
+            key_data[k] = v.isoformat()
+        else:
+            key_data[k] = v
+    return hashlib.md5(json.dumps(key_data, default=str).encode()).hexdigest()
+
+
+def get_or_compute(key: str, compute_fn: Callable) -> Any:
+    """Return cached result or compute and cache it."""
+    if key not in _result_cache:
+        logger.info(f"Cache miss for {key[:12]}..., computing...")
+        _result_cache[key] = compute_fn()
+    else:
+        logger.info(f"Cache hit for {key[:12]}...")
+    return _result_cache[key]
 
 
 def _load_from_duckdb() -> pd.DataFrame:

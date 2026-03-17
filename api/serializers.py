@@ -38,12 +38,28 @@ def _convert_value(v):
 
 
 def df_to_records(df: pd.DataFrame) -> list[dict]:
-    """Convert DataFrame to list of dicts with JSON-safe types."""
-    records = df.to_dict(orient="records")
-    return [
-        {k: _convert_value(v) for k, v in record.items()}
-        for record in records
-    ]
+    """Convert DataFrame to list of dicts with JSON-safe types.
+
+    Uses column-level vectorized conversion instead of per-cell iteration.
+    """
+    df = df.copy()
+    for col in df.columns:
+        dtype = df[col].dtype
+        if pd.api.types.is_bool_dtype(dtype):
+            df[col] = df[col].astype(object).where(df[col].notna(), None)
+        elif pd.api.types.is_integer_dtype(dtype):
+            df[col] = df[col].astype(object).where(df[col].notna(), None)
+        elif pd.api.types.is_float_dtype(dtype):
+            mask = df[col].notna() & ~np.isinf(df[col])
+            df[col] = df[col].where(mask, None)
+            # Convert remaining numpy floats to Python floats
+            df.loc[mask, col] = df.loc[mask, col].astype(float)
+        elif pd.api.types.is_datetime64_any_dtype(dtype):
+            df[col] = df[col].astype(str).where(df[col].notna(), None)
+        elif dtype == object:
+            # Handle mixed object columns (may contain numpy types)
+            df[col] = df[col].where(df[col].notna(), None)
+    return df.to_dict(orient="records")
 
 
 def dict_to_safe(d: dict) -> dict:

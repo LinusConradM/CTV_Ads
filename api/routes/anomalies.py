@@ -3,7 +3,7 @@
 from datetime import date
 import numpy as np
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records
 
 from analytics.anomaly_detection import (
@@ -30,8 +30,18 @@ def get_anomalies(
     device_types: list[str] | None = Query(None),
 ):
     """Anomaly detection results, control charts, and flagged records."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("anomalies", contamination=contamination, metric=metric,
+                    start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_anomalies(df, contamination, metric)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_anomalies(df, contamination, metric):
     if len(df) == 0:
         return {"kpis": {}, "summary": [], "control_chart": [], "flagged_records": [], "score_distribution": []}
 

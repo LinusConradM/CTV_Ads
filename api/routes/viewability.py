@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records, dict_to_safe
 
 from analytics.viewability import (
@@ -24,8 +24,17 @@ def get_viewability(
     device_types: list[str] | None = Query(None),
 ):
     """Viewability metrics, distributions, trends, and publisher scorecard."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("viewability", start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_viewability(df)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_viewability(df):
     if len(df) == 0:
         return {"kpis": {}, "campaign_report": [], "device_breakdown": [], "publisher_scorecard": [], "trend": [], "distribution": {}}
 

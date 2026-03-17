@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records
 
 from analytics.attribution import attribution_comparison, build_conversion_paths
@@ -21,8 +21,18 @@ def get_attribution(
     device_types: list[str] | None = Query(None),
 ):
     """Multi-touch attribution comparison across models."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("attribution", half_life_days=half_life_days,
+                    start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_attribution(df, half_life_days)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_attribution(df, half_life_days):
     if len(df) == 0:
         return {"kpis": {}, "comparison": [], "path_stats": {}}
 

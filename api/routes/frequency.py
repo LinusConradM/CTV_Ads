@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records, dict_to_safe
 
 from analytics.frequency_reach import (
@@ -27,8 +27,18 @@ def get_frequency(
     device_types: list[str] | None = Query(None),
 ):
     """Frequency & reach analysis with cap recommendations."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("frequency", campaign_id=campaign_id,
+                    start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_frequency(df, campaign_id)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_frequency(df, campaign_id):
     if len(df) == 0:
         return {"kpis": {}, "reach_curve": [], "frequency_distribution": [], "optimal_frequency": [], "diminishing_returns": [], "cap_recommendation": {}}
 

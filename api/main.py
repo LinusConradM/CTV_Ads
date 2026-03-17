@@ -58,3 +58,31 @@ app.include_router(frequency.router, prefix="/api")
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "service": "ctv-ad-intelligence"}
+
+
+@app.on_event("startup")
+def warm_caches():
+    """Pre-load data and compute default responses at startup for faster first requests."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info("Warming data cache...")
+    try:
+        from api.dependencies import get_full_df
+        df = get_full_df()
+        logger.info(f"Data loaded: {len(df):,} rows")
+
+        # Pre-compute filters (always needed on first page load)
+        logger.info("Pre-computing filters...")
+        filters.router.routes[0].endpoint()
+
+        # Pre-compute overview with default date range
+        min_date = df["report_date"].min()
+        max_date = df["report_date"].max()
+        logger.info(f"Pre-computing overview for {min_date} to {max_date}...")
+        overview.router.routes[0].endpoint(
+            start_date=min_date, end_date=max_date
+        )
+        logger.info("Startup cache warming complete!")
+    except Exception as e:
+        logger.warning(f"Startup cache warming failed (non-fatal): {e}")

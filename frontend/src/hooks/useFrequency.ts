@@ -10,5 +10,6 @@ export function useFrequency(campaignId?: string) {
     queryKey: ['frequency', filters, campaignId],
     queryFn: () => fetchFrequency(filters, campaignId),
     enabled: !!filters.start_date,
+    staleTime: 5 * 60 * 1000,
   });
 }

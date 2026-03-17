@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import dict_to_safe
 
 from analytics.ab_testing import ABTestAnalyzer
@@ -20,8 +20,18 @@ def get_ab_testing(
     end_date: date | None = None,
 ):
     """A/B test analysis between two creatives within a campaign."""
-    df = apply_filters(get_full_df(), start_date, end_date, [campaign_id], None)
+    key = cache_key("ab_testing", campaign_id=campaign_id, metric=metric,
+                    control_creative=control_creative, treatment_creative=treatment_creative,
+                    start_date=start_date, end_date=end_date)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, [campaign_id], None)
+        return _compute_ab_testing(df, metric, control_creative, treatment_creative)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_ab_testing(df, metric, control_creative, treatment_creative):
     if len(df) == 0:
         return {"error": "No data for this campaign"}
 
@@ -36,7 +46,7 @@ def get_ab_testing(
     # Run all tests
     ttest = analyzer.run_ttest()
     power = analyzer.power_analysis()
-    bootstrap = analyzer.bootstrap_ci(n_iterations=5000)
+    bootstrap = analyzer.bootstrap_ci(n_iterations=1000)
     sequential = analyzer.sequential_test()
 
     # KPIs

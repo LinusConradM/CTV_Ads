@@ -10,5 +10,6 @@ export function useAttribution(halfLifeDays: number = 7) {
     queryKey: ['attribution', filters, halfLifeDays],
     queryFn: () => fetchAttribution(filters, halfLifeDays),
     enabled: !!filters.start_date,
+    staleTime: 5 * 60 * 1000,
   });
 }

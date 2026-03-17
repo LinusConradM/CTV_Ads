@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records, _convert_value
 
 router = APIRouter(tags=["overview"])
@@ -16,8 +16,17 @@ def get_overview(
     device_types: list[str] | None = Query(None),
 ):
     """Dashboard home KPIs and daily trend."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("overview", start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_overview(df)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_overview(df):
     total_impressions = len(df)
     unique_reach = int(df["user_id_hashed"].nunique())
     avg_frequency = round(total_impressions / max(unique_reach, 1), 2)

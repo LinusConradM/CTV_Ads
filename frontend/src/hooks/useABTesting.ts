@@ -15,5 +15,6 @@ export function useABTesting(
     queryKey: ['ab-testing', campaignId, controlCreative, treatmentCreative, metric, filters],
     queryFn: () => fetchABTesting(campaignId, controlCreative, treatmentCreative, metric, filters),
     enabled: !!campaignId && !!controlCreative && !!treatmentCreative && !!filters.start_date,
+    staleTime: 5 * 60 * 1000,
   });
 }

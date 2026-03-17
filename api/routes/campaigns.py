@@ -2,7 +2,7 @@
 
 from datetime import date
 from fastapi import APIRouter, Query
-from api.dependencies import get_full_df, apply_filters
+from api.dependencies import get_full_df, apply_filters, cache_key, get_or_compute
 from api.serializers import df_to_records
 
 router = APIRouter(tags=["campaigns"])
@@ -16,8 +16,17 @@ def get_campaigns(
     device_types: list[str] | None = Query(None),
 ):
     """Campaign performance metrics, trends, and breakdowns."""
-    df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+    key = cache_key("campaigns", start_date=start_date, end_date=end_date,
+                    campaigns=campaigns, device_types=device_types)
 
+    def compute():
+        df = apply_filters(get_full_df(), start_date, end_date, campaigns, device_types)
+        return _compute_campaigns(df)
+
+    return get_or_compute(key, compute)
+
+
+def _compute_campaigns(df):
     if len(df) == 0:
         return {"kpis": {}, "performance_table": [], "cpm_trend": [], "device_breakdown": [], "category_breakdown": [], "top_dmas": []}
 

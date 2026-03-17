@@ -24,19 +24,26 @@ def reach_curve(df: pd.DataFrame, campaign_id: str = None) -> pd.DataFrame:
 
     data = data.sort_values("timestamp")
 
-    # Sample at intervals for efficiency
+    # Vectorized cumulative unique count using factorize + first-occurrence tracking
     n = len(data)
     sample_points = np.unique(np.linspace(0, n - 1, min(200, n), dtype=int))
 
-    seen_users = set()
-    curve = []
-    for i, (_, row) in enumerate(data.iterrows()):
-        seen_users.add(row["user_id_hashed"])
-        if i in sample_points:
-            curve.append({
-                "impressions_served": i + 1,
-                "unique_reach": len(seen_users),
-            })
+    user_ids = data["user_id_hashed"].values
+    codes, _ = pd.factorize(user_ids)
+    # Track first occurrence index for each unique user
+    first_seen = np.full(codes.max() + 1 if len(codes) > 0 else 0, n, dtype=np.int64)
+    for i, c in enumerate(codes):
+        if first_seen[c] == n:
+            first_seen[c] = i
+    # Sort first-occurrence indices for searchsorted
+    first_seen_sorted = np.sort(first_seen[first_seen < n])
+    # At each sample point, count how many users were first seen at or before that index
+    unique_at_points = np.searchsorted(first_seen_sorted, sample_points, side="right")
+
+    curve = [
+        {"impressions_served": int(sample_points[j]) + 1, "unique_reach": int(unique_at_points[j])}
+        for j in range(len(sample_points))
+    ]
 
     result = pd.DataFrame(curve)
     if len(result) > 0:
@@ -94,34 +101,39 @@ def diminishing_returns(df: pd.DataFrame) -> pd.DataFrame:
     """Incremental reach per additional impression."""
     data = df.sort_values("timestamp")
 
-    # Compute cumulative reach at checkpoints
+    # Vectorized cumulative reach at checkpoints
     n = len(data)
     checkpoints = np.unique(np.linspace(0, n - 1, min(100, n), dtype=int))
 
-    seen = set()
+    user_ids = data["user_id_hashed"].values
+    codes, _ = pd.factorize(user_ids)
+    first_seen = np.full(codes.max() + 1 if len(codes) > 0 else 0, n, dtype=np.int64)
+    for i, c in enumerate(codes):
+        if first_seen[c] == n:
+            first_seen[c] = i
+    first_seen_sorted = np.sort(first_seen[first_seen < n])
+    reach_at_checkpoints = np.searchsorted(first_seen_sorted, checkpoints, side="right")
+
     points = []
     prev_reach = 0
     prev_imp = 0
+    for j in range(len(checkpoints)):
+        current_reach = int(reach_at_checkpoints[j])
+        impressions = int(checkpoints[j]) + 1
+        incremental_reach = current_reach - prev_reach
+        incremental_imps = impressions - prev_imp
 
-    for i, (_, row) in enumerate(data.iterrows()):
-        seen.add(row["user_id_hashed"])
-        if i in checkpoints:
-            current_reach = len(seen)
-            impressions = i + 1
-            incremental_reach = current_reach - prev_reach
-            incremental_imps = impressions - prev_imp
-
-            points.append({
-                "impressions": impressions,
-                "cumulative_reach": current_reach,
-                "incremental_reach": incremental_reach,
-                "incremental_impressions": incremental_imps,
-                "marginal_reach_rate": (
-                    incremental_reach / incremental_imps if incremental_imps > 0 else 0
-                ),
-            })
-            prev_reach = current_reach
-            prev_imp = impressions
+        points.append({
+            "impressions": impressions,
+            "cumulative_reach": current_reach,
+            "incremental_reach": incremental_reach,
+            "incremental_impressions": incremental_imps,
+            "marginal_reach_rate": (
+                incremental_reach / incremental_imps if incremental_imps > 0 else 0
+            ),
+        })
+        prev_reach = current_reach
+        prev_imp = impressions
 
     return pd.DataFrame(points)
 
